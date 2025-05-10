@@ -5,10 +5,10 @@ const CACHE_NAME = 'app-cache-v1';
 const FILES_TO_CACHE = [
     './', // Cache da raiz do site
     './index.html', // Certifique-se que o nome está correto no seu projeto
-    './style.css', // Certifique-se que o arquivo de estilo está correto
-    './icon-192x192.png', // Ícone usado no manifest
-    './icon-512x512.png', // Ícone usado no manifest (opcional)
-    './script.js' // Adicione seu arquivo JavaScript principal, se houver
+    './styles.css', // Certifique-se que o arquivo de estilo está correto
+    './icon.png', // Ícone usado no manifest
+    './icon-.png', // Ícone usado no manifest (opcional)
+    './service-worker.js'
 ];
 
 // Evento de instalação

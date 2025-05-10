@@ -1,89 +1,157 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Welcome to Firebase Hosting</title>
+<html lang="pt-BR">
+<head>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="theme-color" content="#007bff">
+  <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sistema Fácil</title>
+</head>
+<body>
 
-    <!-- update the version number as needed -->
-    <script defer src="/__/firebase/11.7.1/firebase-app-compat.js"></script>
-    <!-- include only the Firebase features as you need -->
-    <script defer src="/__/firebase/11.7.1/firebase-auth-compat.js"></script>
-    <script defer src="/__/firebase/11.7.1/firebase-database-compat.js"></script>
-    <script defer src="/__/firebase/11.7.1/firebase-firestore-compat.js"></script>
-    <script defer src="/__/firebase/11.7.1/firebase-functions-compat.js"></script>
-    <script defer src="/__/firebase/11.7.1/firebase-messaging-compat.js"></script>
-    <script defer src="/__/firebase/11.7.1/firebase-storage-compat.js"></script>
-    <script defer src="/__/firebase/11.7.1/firebase-analytics-compat.js"></script>
-    <script defer src="/__/firebase/11.7.1/firebase-remote-config-compat.js"></script>
-    <script defer src="/__/firebase/11.7.1/firebase-performance-compat.js"></script>
-    <!-- 
-      initialize the SDK after all desired features are loaded, set useEmulator to false
-      to avoid connecting the SDK to running emulators.
-    -->
-    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+<!-- Tela de Login por Token -->
+<div id="loginScreen" style="text-align:center;padding:40px;">
+  <h2>Acesso ao Sistema</h2>
+  <input type="password" id="tokenInput" placeholder="Digite seu token" style="padding:10px;width:60%;margin-bottom:12px;border-radius:6px;border:1px solid #ccc;">
+  <br>
+  <button onclick="checkToken()" style="padding:10px 20px;border:none;border-radius:6px;background:#007bff;color:white;font-weight:bold;">Entrar</button>
+</div>
 
-    <style media="screen">
-      body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
-      #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
-      #message h2 { color: #ffa100; font-weight: bold; font-size: 16px; margin: 0 0 8px; }
-      #message h1 { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.6); margin: 0 0 16px;}
-      #message p { line-height: 140%; margin: 16px 0 24px; font-size: 14px; }
-      #message a { display: block; text-align: center; background: #039be5; text-transform: uppercase; text-decoration: none; color: white; padding: 16px; border-radius: 4px; }
-      #message, #message a { box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
-      #load { color: rgba(0,0,0,0.4); text-align: center; font-size: 13px; }
-      @media (max-width: 600px) {
-        body, #message { margin-top: 0; background: white; box-shadow: none; }
-        body { border-top: 16px solid #ffa100; }
-      }
-    </style>
-  </head>
-  <body>
-    <div id="message">
-      <h2>Welcome</h2>
-      <h1>Firebase Hosting Setup Complete</h1>
-      <p>You're seeing this because you've successfully setup Firebase Hosting. Now it's time to go build something extraordinary!</p>
-      <a target="_blank" href="https://firebase.google.com/docs/hosting/">Open Hosting Documentation</a>
+<!-- Cabeçalho com nome do sistema -->
+<h1>Sistema Fácil</h1>
+
+<div class="container">
+
+  <!-- Tela Principal -->
+  <div id="homeScreen" style="display:none;">
+    <!-- Dashboard Financeiro -->
+    <div id="dashboard" class="dashboard compact-dashboard">
+      <div class="dashboard-item">
+        <div class="dashboard-label">Total Emprestado</div>
+        <div class="dashboard-value" id="totalLoaned">R$ 0,00</div>
+      </div>
+      <div class="dashboard-item">
+        <div class="dashboard-label">Total Recebido</div>
+        <div class="dashboard-value" id="totalReceived">R$ 0,00</div>
+      </div>
+      <div class="dashboard-item">
+        <div class="dashboard-label">Lucro em Juros</div>
+        <div class="dashboard-value" id="totalProfit">R$ 0,00</div>
+      </div>
+      <div class="dashboard-item">
+        <div class="dashboard-label">Valor a Receber</div>
+        <div class="dashboard-value" id="totalToReceive">R$ 0,00</div>
+      </div>
     </div>
-    <p id="load">Firebase SDK Loading&hellip;</p>
+    <!-- Fim Dashboard -->
 
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const loadEl = document.querySelector('#load');
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-        // // The Firebase SDK is initialized and available here!
-        //
-        // firebase.auth().onAuthStateChanged(user => { });
-        // firebase.database().ref('/path/to/ref').on('value', snapshot => { });
-        // firebase.firestore().doc('/foo/bar').get().then(() => { });
-        // firebase.functions().httpsCallable('yourFunction')().then(() => { });
-        // firebase.messaging().requestPermission().then(() => { });
-        // firebase.storage().ref('/path/to/ref').getDownloadURL().then(() => { });
-        // firebase.analytics(); // call to activate
-        // firebase.analytics().logEvent('tutorial_completed');
-        // firebase.performance(); // call to activate
-        //
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+    <button class="primary" onclick="openRegister()">Cadastrar Novo Cliente</button>
+    <button class="secondary" onclick="showAllClients()">Mostrar Todos os Clientes</button>
 
-        try {
-          let app = firebase.app();
-          let features = [
-            'auth', 
-            'database', 
-            'firestore',
-            'functions',
-            'messaging', 
-            'storage', 
-            'analytics', 
-            'remoteConfig',
-            'performance',
-          ].filter(feature => typeof app[feature] === 'function');
-          loadEl.textContent = `Firebase SDK loaded with ${features.join(', ')}`;
-        } catch (e) {
-          console.error(e);
-          loadEl.textContent = 'Error loading the Firebase SDK, check the console.';
-        }
-      });
-    </script>
-  </body>
+    <div class="search-area">
+      <input type="search" id="clientSearch" placeholder="Digite o nome do cliente..." aria-label="Buscar cliente" />
+      <button class="secondary" onclick="searchClient()">Buscar Cliente</button>
+    </div>
+
+    <div class="client-list">
+      <h2>Mensalidades Vencendo nos Próximos 5 Dias</h2>
+      <ul id="duePayments">
+        <!-- Será populada por JS -->
+      </ul>
+    </div>
+  </div>
+
+  <!-- Tela de Registro de Novo Cliente -->
+  <div id="registerForm" class="hidden" aria-label="Formulário Cadastro Cliente">
+    <h2>Cadastrar Novo Cliente</h2>
+    <form id="formRegister" onsubmit="return false;">
+      <input type="text" id="name" required placeholder="Nome completo" autocomplete="off" />
+      <input type="tel" id="phone" pattern="[0-9\s\-\+\(\)]{8,15}" placeholder="Telefone" autocomplete="off" />
+      <input type="text" id="cpf" placeholder="CPF" autocomplete="off" />
+      <input type="text" id="rg" placeholder="RG" autocomplete="off" />
+      <input type="text" id="address" placeholder="Endereço" autocomplete="off" />
+      <input type="text" id="cep" placeholder="CEP" autocomplete="off" />
+      <input type="file" id="photo" accept="image/*" onchange="updatePhotoPreview(event)" />
+      <img id="photoPreview" alt="Preview da foto do cliente" class="hidden" />
+      <button type="button" class="primary" onclick="registerClient()">Salvar Cliente</button>
+      <button type="button" class="secondary" onclick="closeRegister()">Cancelar</button>
+    </form>
+  </div>
+
+  <!-- Tela do Perfil do Cliente -->
+  <div id="clientProfile" class="hidden" aria-label="Perfil do Cliente">
+    <h2>Perfil do Cliente</h2>
+    <div class="profile-flex">
+      <img id="clientPhoto" src="" alt="Foto do Cliente" />
+      <div id="clientData"></div>
+    </div>
+
+    <div id="loanSection" aria-label="Adicionar empréstimo">
+      <input type="number" id="loanAmount" placeholder="Valor do Empréstimo (R$)" min="0" step="0.01" aria-label="Valor do empréstimo" />
+      <input type="number" id="interestRate" placeholder="Porcentagem de Juros (%)" min="0" max="100" step="0.01" aria-label="Porcentagem de juros" />
+      <button onclick="addLoan()" class="primary" aria-label="Adicionar empréstimo">Adicionar</button>
+    </div>
+
+    <div id="loanInfo"></div>
+
+    <div id="profileActions">
+      <button onclick="editProfile()" class="secondary btn-margin">Editar Perfil</button>
+      <button onclick="chargeDebt()" class="secondary">Cobrar</button>
+      <button onclick="showPayments()" class="secondary btn-margin">Visualizar Pagamentos</button>
+      <button onclick="confirmDeleteClient(currentClient.id)" class="secondary btn-margin">Excluir Cliente</button>
+    </div>
+
+    <div id="paymentSection" class="hidden section-margin">
+      <input type="number" id="payAmount" placeholder="Insira valor pago (R$)" min="0" step="0.01" style="width: 100%; padding: 10px; margin-bottom: 10px; border-radius:6px; border: 1px solid #ccc;" />
+      <button onclick="confirmPayment()" class="primary btn-fullwidth">Confirmar Pagamento</button>
+    </div>
+
+    <div id="reminderMessage" class="hidden"></div>
+
+    <button onclick="backToHome()" class="secondary btn-margin-lg">Voltar</button>
+  </div>
+
+</div>
+
+<!-- Modal para visualizar pagamentos -->
+<div id="paymentModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeModal()">&times;</span>
+    <h3>Pagamentos</h3>
+    <ul id="paymentList"></ul>
+  </div>
+</div>
+
+<!-- Modal para recibo de cobrança -->
+<div id="receiptModal" class="modal">
+  <div class="modal-content">
+    <span class="close" onclick="closeReceiptModal()">&times;</span>
+    <h3>Recibo de Cobrança</h3>
+    <pre id="receiptContent"></pre>
+    <button id="shareButton" onclick="shareReceipt()" class="primary">Compartilhar via WhatsApp</button>
+  </div>
+</div>
+
+<!-- Modal para relatório -->
+<div id="reportModal" class="modal">
+  <div class="modal-content modal-maxwidth">
+    <span class="close" onclick="closeReportModal()">&times;</span>
+    <h3>Relatório Geral</h3>
+    <div id="reportFilters" class="mb-10"></div>
+    <div id="reportContent" class="report-content-scroll"></div>
+    <button class="primary" onclick="exportReport('csv')">Exportar CSV</button>
+    <button class="secondary" onclick="exportReport('json')">Exportar JSON</button>
+  </div>
+</div>
+
+<!-- Scripts externos divididos -->
+<script type="module" src="auth.js"></script>
+<script src="clients.js"></script>
+<script src="loans.js"></script>
+<script src="dashboard.js"></script>
+<script src="reports.js"></script>
+
+</body>
 </html>
