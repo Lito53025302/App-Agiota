@@ -1,9 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /tokens/{tokenId} {
-      allow get, list: if true;
+    // permitir leitura de loans e payments
+    match /loans/{loanId} {
+      allow read: if true;
+      allow write: if false;
     }
+    match /payments/{paymentId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    // demais coleções, aplicar suas regras
     match /{document=**} {
       allow read, write: if false;
     }

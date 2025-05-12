@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <link rel="manifest" href="manifest.json">
+  <!-- favicon de fallback -->
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <!-- apple-touch-icon existente -->
+  <link rel="apple-touch-icon" href="assets/logo.svg">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0066cc">
+  <meta name="description" content="Sistema Fácil de controle de empréstimos">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- Firebase SDKs via CDN -->
+  <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+  <title>Sistema Fácil</title>
+</head>
+<body>
+  <!-- App Container -->
+  <div id="app">
+    <!-- Splash Screen with Logo -->
+    <div id="splashScreen" class="screen visible">
+      <div class="splash-content">
+        <img src="assets/logo.svg" alt="Logo Sistema Fácil" class="logo-splash">
+        <h1 class="app-title">Sistema Fácil</h1>
+        <div class="loader"></div>
+      </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="screen">
+      <div class="login-container">
+        <img src="assets/logo.svg" alt="Logo Sistema Fácil" class="logo">
+        <h1 class="title-centered">Sistema Fácil</h1>
+        <div class="card">
+          <h2>Acesso ao Sistema</h2>
+          <form id="loginForm" class="form">
+            <div class="input-group">
+              <label for="tokenInput">Token de Acesso</label>
+              <input type="password" id="tokenInput" placeholder="Digite seu token" required>
+            </div>
+            <button type="submit" class="btn primary">Entrar</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Home Screen -->
+    <div id="homeScreen" class="screen">
+      <header class="app-header">
+        <div class="header-content">
+          <img src="assets/logo.svg" alt="Logo Sistema Fácil" class="logo-small">
+          <h1>Sistema Fácil</h1>
+          <div class="header-actions">
+            <button id="reportButton" class="btn icon" aria-label="Relatório">
+              <span class="material-icons">assessment</span>
+            </button>
+            <button id="logoutButton" class="btn icon" aria-label="Sair">
+              <span class="material-icons">logout</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <!-- Dashboard Financeiro -->
+        <section class="dashboard">
+          <h2>Dashboard Financeiro</h2>
+          <div class="dashboard-grid">
+            <div class="dashboard-item">
+              <div class="dashboard-icon positive">
+                <span class="material-icons">payments</span>
+              </div>
+              <div>
+                <div class="dashboard-label">Total Emprestado</div>
+                <div class="dashboard-value" id="totalLoaned">R$ 0,00</div>
+              </div>
+            </div>
+            <div class="dashboard-item">
+              <div class="dashboard-icon positive">
+                <span class="material-icons">savings</span>
+              </div>
+              <div>
+                <div class="dashboard-label">Total Recebido</div>
+                <div class="dashboard-value" id="totalReceived">R$ 0,00</div>
+              </div>
+            </div>
+            <div class="dashboard-item">
+              <div class="dashboard-icon profit">
+                <span class="material-icons">trending_up</span>
+              </div>
+              <div>
+                <div class="dashboard-label">Lucro em Juros</div>
+                <div class="dashboard-value" id="totalProfit">R$ 0,00</div>
+              </div>
+            </div>
+            <div class="dashboard-item">
+              <div class="dashboard-icon pending">
+                <span class="material-icons">account_balance_wallet</span>
+              </div>
+              <div>
+                <div class="dashboard-label">Valor a Receber</div>
+                <div class="dashboard-value" id="totalToReceive">R$ 0,00</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Actions Section -->
+        <section class="actions-section">
+          <button id="newClientButton" class="btn primary">
+            <span class="material-icons">person_add</span>
+            Cadastrar Novo Cliente
+          </button>
+          <button id="allClientsButton" class="btn secondary">
+            <span class="material-icons">people</span>
+            Todos os Clientes
+          </button>
+        </section>
+
+        <!-- Search Section -->
+        <section class="search-section">
+          <div class="search-container">
+            <div class="input-group with-icon">
+              <span class="material-icons search-icon">search</span>
+              <input type="search" id="clientSearch" placeholder="Digite o nome do cliente...">
+            </div>
+            <button id="searchButton" class="btn secondary">Buscar</button>
+          </div>
+        </section>
+
+        <!-- Due Payments Section -->
+        <section class="due-payments">
+          <div class="section-header">
+            <h2>Mensalidades Vencendo nos Próximos 5 Dias</h2>
+            <span class="badge" id="duePaymentCount">0</span>
+          </div>
+          <ul id="duePayments" class="payment-list"></ul>
+          <div id="noDuePayments" class="empty-state">
+            <span class="material-icons">check_circle</span>
+            <p>Nenhum pagamento pendente para os próximos dias</p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- All Clients Screen -->
+    <div id="clientsScreen" class="screen">
+      <header class="screen-header">
+        <button class="btn back-button" id="backFromClientsButton">
+          <span class="material-icons">arrow_back</span>
+        </button>
+        <h2>Todos os Clientes</h2>
+      </header>
+      <main class="main-content">
+        <div class="clients-filter">
+          <div class="input-group with-icon">
+            <span class="material-icons search-icon">search</span>
+            <input type="search" id="clientsFilter" placeholder="Filtrar clientes...">
+          </div>
+        </div>
+        <ul id="allClientsList" class="clients-list"></ul>
+        <div id="noClientsMessage" class="empty-state">
+          <span class="material-icons">people</span>
+          <p>Nenhum cliente cadastrado</p>
+          <button id="addFirstClientButton" class="btn primary">Cadastrar Primeiro Cliente</button>
+        </div>
+      </main>
+    </div>
+
+    <!-- Client Registration Screen -->
+    <div id="registerScreen" class="screen">
+      <header class="screen-header">
+        <button class="btn back-button" id="backFromRegisterButton">
+          <span class="material-icons">arrow_back</span>
+        </button>
+        <h2>Cadastrar Novo Cliente</h2>
+      </header>
+      <main class="main-content">
+        <form id="formRegister" class="form">
+          <div class="photo-upload">
+            <div id="photoPlaceholder" class="photo-placeholder">
+              <span class="material-icons">add_a_photo</span>
+            </div>
+            <img id="photoPreview" class="hidden" alt="Preview da foto do cliente">
+            <input type="file" id="photo" accept="image/*" class="hidden">
+            <button type="button" id="choosePhotoButton" class="btn secondary">Escolher Foto</button>
+          </div>
+          
+          <div class="form-grid">
+            <div class="input-group">
+              <label for="name">Nome Completo*</label>
+              <input type="text" id="name" required placeholder="Nome completo do cliente">
+            </div>
+            
+            <div class="input-group">
+              <label for="phone">Telefone</label>
+              <input type="tel" id="phone" placeholder="(XX) XXXXX-XXXX">
+            </div>
+            
+            <div class="input-group">
+              <label for="cpf">CPF</label>
+              <input type="text" id="cpf" placeholder="XXX.XXX.XXX-XX">
+            </div>
+            
+            <div class="input-group">
+              <label for="rg">RG</label>
+              <input type="text" id="rg" placeholder="RG do cliente">
+            </div>
+            
+            <div class="input-group full-width">
+              <label for="address">Endereço</label>
+              <input type="text" id="address" placeholder="Endereço completo">
+            </div>
+            
+            <div class="input-group">
+              <label for="cep">CEP</label>
+              <input type="text" id="cep" placeholder="XXXXX-XXX">
+            </div>
+          </div>
+          
+          <div class="form-actions">
+            <button type="submit" class="btn primary">Salvar Cliente</button>
+            <button type="button" id="cancelRegisterButton" class="btn secondary">Cancelar</button>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <!-- Client Profile Screen -->
+    <div id="clientProfileScreen" class="screen">
+      <header class="screen-header">
+        <button class="btn back-button" id="backFromProfileButton">
+          <span class="material-icons">arrow_back</span>
+        </button>
+        <h2>Perfil do Cliente</h2>
+        <div class="header-actions">
+          <button id="editClientButton" class="btn icon" aria-label="Editar Cliente">
+            <span class="material-icons">edit</span>
+          </button>
+        </div>
+      </header>
+      
+      <main class="main-content">
+        <section class="profile-section">
+          <div class="profile-header">
+            <div class="profile-photo">
+              <img id="clientPhoto" src="assets/user-placeholder.png" alt="Foto do Cliente">
+            </div>
+            <div class="profile-info">
+              <h3 id="clientName">Nome do Cliente</h3>
+              <div id="clientPhone" class="profile-detail">
+                <span class="material-icons">phone</span>
+                <span>Telefone não cadastrado</span>
+              </div>
+              <div id="clientAddress" class="profile-detail">
+                <span class="material-icons">home</span>
+                <span>Endereço não cadastrado</span>
+              </div>
+              <div id="clientId" class="profile-detail">
+                <span class="material-icons">badge</span>
+                <span>CPF/RG não cadastrado</span>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <section class="loan-summary">
+          <div class="loan-summary-header">
+            <h3>Resumo do Empréstimo</h3>
+            <span class="badge" id="loanStatus">Sem empréstimos</span>
+          </div>
+          <div id="loanInfo" class="loan-details"></div>
+          <div id="noLoanMessage" class="empty-state">
+            <span class="material-icons">account_balance</span>
+            <p>Cliente sem empréstimos ativos</p>
+          </div>
+        </section>
+        
+        <section id="newLoanSection" class="new-loan-section">
+          <h3>Novo Empréstimo</h3>
+          <div class="form">
+            <div class="form-grid">
+              <div class="input-group">
+                <label for="loanAmount">Valor do Empréstimo*</label>
+                <input type="number" id="loanAmount" min="0" step="0.01" placeholder="R$ 0,00" required>
+              </div>
+              <div class="input-group">
+                <label for="interestRate">Taxa de Juros (%)*</label>
+                <input type="number" id="interestRate" min="0" max="100" step="0.01" placeholder="0%" required>
+              </div>
+            </div>
+            <button id="addLoanButton" class="btn primary">Adicionar Empréstimo</button>
+          </div>
+        </section>
+        
+        <section class="client-actions">
+          <div class="action-grid">
+            <button id="chargeButton" class="action-button">
+              <span class="material-icons">receipt_long</span>
+              <span>Cobrar</span>
+            </button>
+            <button id="paymentButton" class="action-button">
+              <span class="material-icons">payments</span>
+              <span>Receber</span>
+            </button>
+            <button id="historyButton" class="action-button">
+              <span class="material-icons">history</span>
+              <span>Histórico</span>
+            </button>
+            <button id="deleteClientButton" class="action-button danger">
+              <span class="material-icons">delete</span>
+              <span>Excluir</span>
+            </button>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Modals -->
+  <!-- Payment Modal -->
+  <div id="paymentModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Realizar Pagamento</h3>
+        <button class="close-button" id="closePaymentModal">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form">
+          <div class="input-group">
+            <label for="payAmount">Valor Recebido (R$)*</label>
+            <input type="number" id="payAmount" min="0" step="0.01" placeholder="R$ 0,00" required>
+          </div>
+          <div class="input-group">
+            <label for="paymentDate">Data do Pagamento</label>
+            <input type="date" id="paymentDate">
+          </div>
+          <div class="input-group">
+            <label for="paymentNotes">Observações</label>
+            <textarea id="paymentNotes" placeholder="Notas sobre o pagamento"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="confirmPaymentButton" class="btn primary">Confirmar Pagamento</button>
+        <button id="cancelPaymentButton" class="btn secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment History Modal -->
+  <div id="historyModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Histórico de Pagamentos</h3>
+        <button class="close-button" id="closeHistoryModal">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <ul id="paymentList" class="payment-history-list"></ul>
+        <div id="noPaymentsMessage" class="empty-state">
+          <span class="material-icons">payments</span>
+          <p>Nenhum pagamento registrado</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Receipt Modal -->
+  <div id="receiptModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Recibo de Cobrança</h3>
+        <button class="close-button" id="closeReceiptModal">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="receiptContent" class="receipt-content"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="shareReceiptButton" class="btn primary">
+          <span class="material-icons">whatsapp</span>
+          Enviar via WhatsApp
+        </button>
+        <button id="copyReceiptButton" class="btn secondary">
+          <span class="material-icons">content_copy</span>
+          Copiar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Report Modal -->
+  <div id="reportModal" class="modal modal-large">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Relatório Geral</h3>
+        <button class="close-button" id="closeReportModal">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="report-filters">
+          <div class="input-group">
+            <label for="reportPeriod">Período</label>
+            <select id="reportPeriod">
+              <option value="all">Todo o período</option>
+              <option value="month">Último mês</option>
+              <option value="quarter">Último trimestre</option>
+              <option value="year">Último ano</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label for="reportType">Tipo de Relatório</label>
+            <select id="reportType">
+              <option value="summary">Resumo</option>
+              <option value="clients">Clientes</option>
+              <option value="loans">Empréstimos</option>
+              <option value="payments">Pagamentos</option>
+            </select>
+          </div>
+          <button id="generateReportButton" class="btn primary">Gerar Relatório</button>
+        </div>
+        <div id="reportContent" class="report-content"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="exportCsvButton" class="btn secondary">
+          <span class="material-icons">download</span>
+          Exportar CSV
+        </button>
+        <button id="exportJsonButton" class="btn secondary">
+          <span class="material-icons">code</span>
+          Exportar JSON
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div id="confirmationModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="confirmationTitle">Confirmação</h3>
+        <button class="close-button" id="closeConfirmationModal">
+          <span class="material-icons">close</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p id="confirmationMessage">Tem certeza que deseja realizar esta ação?</p>
+      </div>
+      <div class="modal-footer">
+        <button id="confirmButton" class="btn danger">Confirmar</button>
+        <button id="cancelConfirmButton" class="btn secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Material Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+
+  <!-- Core Scripts -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

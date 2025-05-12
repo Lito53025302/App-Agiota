@@ -1,5 +1,12 @@
 {
+  "name": "sistema-facil",
+  "version": "1.0.0",
+  "description": "Sistema Fácil de controle de empréstimos",
+  "main": "index.js",
+  "scripts": {
+    "start": "serve -s ."
+  },
   "dependencies": {
-    "firebase": "^11.7.1"
+    "serve": "^14.2.1"
   }
 }
