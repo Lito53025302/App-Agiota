@@ -9,16 +9,28 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0066cc">
+  <meta name="msapplication-navbutton-color" content="#0066cc">
+  <meta name="msapplication-navbutton-color" content="#0066cc">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="msapplication-TileColor" content="#0066cc">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="color-scheme" content="light dark">
+  <meta name="msapplication-navbutton-color" content="#0066cc">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="msapplication-TileColor" content="#0066cc">
   <meta name="description" content="Sistema Fácil de controle de empréstimos">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
-  <!-- Firebase SDKs via CDN -->
-  <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-  <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-  <script defer src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+  <!-- Firebase SDKs (Compat Version - Carregados Sincronamente no Head) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <title>Sistema Fácil</title>
 </head>
 <body>
@@ -189,42 +201,42 @@
               <span class="material-icons">add_a_photo</span>
             </div>
             <img id="photoPreview" class="hidden" alt="Preview da foto do cliente">
-            <input type="file" id="photo" accept="image/*" class="hidden">
+            <input type="file" id="photo" accept="image/*" class="hidden" title="Escolha uma foto para o cliente">
             <button type="button" id="choosePhotoButton" class="btn secondary">Escolher Foto</button>
           </div>
-          
+
           <div class="form-grid">
             <div class="input-group">
               <label for="name">Nome Completo*</label>
               <input type="text" id="name" required placeholder="Nome completo do cliente">
             </div>
-            
+
             <div class="input-group">
               <label for="phone">Telefone</label>
               <input type="tel" id="phone" placeholder="(XX) XXXXX-XXXX">
             </div>
-            
+
             <div class="input-group">
               <label for="cpf">CPF</label>
               <input type="text" id="cpf" placeholder="XXX.XXX.XXX-XX">
             </div>
-            
+
             <div class="input-group">
               <label for="rg">RG</label>
               <input type="text" id="rg" placeholder="RG do cliente">
             </div>
-            
+
             <div class="input-group full-width">
               <label for="address">Endereço</label>
               <input type="text" id="address" placeholder="Endereço completo">
             </div>
-            
+
             <div class="input-group">
               <label for="cep">CEP</label>
               <input type="text" id="cep" placeholder="XXXXX-XXX">
             </div>
           </div>
-          
+
           <div class="form-actions">
             <button type="submit" class="btn primary">Salvar Cliente</button>
             <button type="button" id="cancelRegisterButton" class="btn secondary">Cancelar</button>
@@ -246,7 +258,7 @@
           </button>
         </div>
       </header>
-      
+
       <main class="main-content">
         <section class="profile-section">
           <div class="profile-header">
@@ -270,7 +282,7 @@
             </div>
           </div>
         </section>
-        
+
         <section class="loan-summary">
           <div class="loan-summary-header">
             <h3>Resumo do Empréstimo</h3>
@@ -282,7 +294,7 @@
             <p>Cliente sem empréstimos ativos</p>
           </div>
         </section>
-        
+
         <section id="newLoanSection" class="new-loan-section">
           <h3>Novo Empréstimo</h3>
           <div class="form">
@@ -299,7 +311,7 @@
             <button id="addLoanButton" class="btn primary">Adicionar Empréstimo</button>
           </div>
         </section>
-        
+
         <section class="client-actions">
           <div class="action-grid">
             <button id="chargeButton" class="action-button">
@@ -447,7 +459,7 @@
     </div>
   </div>
 
-  <!-- Confirmation Modal -->
+  <!-- Confirmation Modal (CORRIGIDO) -->
   <div id="confirmationModal" class="modal">
     <div class="modal-content">
       <div class="modal-header">
@@ -460,19 +472,26 @@
         <p id="confirmationMessage">Tem certeza que deseja realizar esta ação?</p>
       </div>
       <div class="modal-footer">
-        <button id="confirmButton" class="btn danger">Confirmar</button>
-        <button id="cancelConfirmButton" class="btn secondary">Cancelar</button>
+        <!-- IDs CORRIGIDOS AQUI -->
+        <button id="confirmActionBtn" class="btn danger">Confirmar</button>
+        <button id="cancelActionBtn" class="btn secondary">Cancelar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Adiciona modal de histórico de cliente -->
+  <div id="historyModal" class="modal hidden">
+    <div class="modal-content">
+      <span class="close" onclick="closeModal('historyModal')">&times;</span>
+      <h2>Histórico do Cliente</h2>
+      <div id="historyContent"></div>
     </div>
   </div>
 
   <!-- Toast Notifications -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <!-- Material Icons -->
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-
-  <!-- Core Scripts -->
+  <!-- Core Scripts (Carregado no final do body) -->
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

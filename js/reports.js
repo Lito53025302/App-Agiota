@@ -1,34 +1,94 @@
 // Reports functionality
-import { getFirestore } from './firebase.js';
-import { showToast } from './ui.js';
 
-let db;
+import { getDbInstance } from './firebase.js';
+import { showToast } from './ui.js';
+// Importa a função de cálculo de dívida de loans.js
+import { calculateRemainingDebt } from './loans.js';
+
+let db; // Instância do Firestore
 
 export function setupReports() {
-  db = getFirestore();
-  
-  // Expose necessary functions globally
-  window.openReportModal = openReportModal;
-  window.generateReport = generateReport;
-  window.exportReport = exportReport;
-}
-
-// Function to open report modal
-function openReportModal() {
-  // Reset report content
-  document.getElementById('reportContent').innerHTML = '';
-  
-  // Show modal
-  document.getElementById('reportModal').classList.add('visible');
-}
-
-// Function to generate report
-async function generateReport() {
   try {
-    const reportType = document.getElementById('reportType').value;
-    const reportPeriod = document.getElementById('reportPeriod').value;
-    
-    // Generate report based on type
+    db = getDbInstance();
+    if (!db) {
+      console.error("Falha ao obter instância do Firestore em reports.js.");
+      showToast('Erro Crítico', 'Falha ao conectar com banco de dados (Relatórios).', 'error');
+      return;
+    }
+
+    window.openReportModal = openReportModal;
+    window.generateReport = generateReport;
+    window.exportReport = exportReport;
+
+    console.log("Módulo de Relatórios configurado.");
+  } catch (error) {
+    console.error("Erro configurando Reports:", error);
+    showToast('Erro', 'Falha ao iniciar módulo de relatórios.', 'error');
+  }
+}
+
+// --- Funções do Modal de Relatórios ---
+
+function openReportModal() {
+  const reportModal = document.getElementById('reportModal');
+  const reportContentEl = document.getElementById('reportContent');
+  const reportTypeSelect = document.getElementById('reportType');
+  const reportPeriodSelect = document.getElementById('reportPeriod');
+  const exportCsvButton = document.getElementById('exportCsvButton');
+  const exportJsonButton = document.getElementById('exportJsonButton');
+
+  if (!reportModal || !reportContentEl || !reportTypeSelect || !reportPeriodSelect) {
+      showToast('Erro', 'Elementos do modal de relatórios não encontrados no HTML.', 'error');
+      return;
+  }
+
+  reportContentEl.innerHTML = '<p class="text-center text-gray-500">Selecione o tipo e o período do relatório e clique em "Gerar".</p>';
+  reportTypeSelect.selectedIndex = 0;
+  reportPeriodSelect.selectedIndex = 0;
+
+  if (exportCsvButton) exportCsvButton.disabled = true;
+  if (exportJsonButton) exportJsonButton.disabled = true;
+  window.currentReportData = null;
+
+  reportModal.classList.add('visible');
+  reportModal.setAttribute('aria-hidden', 'false');
+}
+
+async function generateReport() {
+  if (!db) {
+    showToast('Erro', 'Banco de dados não inicializado (generateReport).', 'error');
+    return;
+  }
+
+  const reportTypeSelect = document.getElementById('reportType');
+  const reportPeriodSelect = document.getElementById('reportPeriod');
+  const reportContentEl = document.getElementById('reportContent');
+  const generateButton = document.querySelector('#reportModal button:not([onclick*="exportReport"])');
+  const exportCsvButton = document.getElementById('exportCsvButton');
+  const exportJsonButton = document.getElementById('exportJsonButton');
+
+  if (!reportTypeSelect || !reportPeriodSelect || !reportContentEl) {
+      showToast('Erro', 'Elementos essenciais do modal de relatórios não encontrados.', 'error');
+      return;
+  }
+
+  const reportType = reportTypeSelect.value;
+  const reportPeriod = reportPeriodSelect.value;
+
+  if (!reportType || !reportPeriod) {
+      showToast('Atenção', 'Selecione o tipo e o período do relatório.', 'warning');
+      return;
+  }
+
+  reportContentEl.innerHTML = '<p class="text-center text-gray-500 py-4">Gerando relatório, por favor aguarde...</p>';
+  if (generateButton) generateButton.disabled = true;
+  if (exportCsvButton) exportCsvButton.disabled = true;
+  if (exportJsonButton) exportJsonButton.disabled = true;
+  window.currentReportData = null;
+
+  console.log(`Gerando relatório: Tipo=${reportType}, Período=${reportPeriod}`);
+
+  try {
     switch (reportType) {
       case 'summary':
         await generateSummaryReport(reportPeriod);
@@ -43,690 +103,534 @@ async function generateReport() {
         await generatePaymentsReport(reportPeriod);
         break;
       default:
-        showToast('Erro', 'Tipo de relatório inválido', 'error');
+        showToast('Erro', 'Tipo de relatório inválido selecionado.', 'error');
+        reportContentEl.innerHTML = '<p class="text-center text-red-500">Erro: Tipo de relatório inválido.</p>';
         break;
     }
-    
+
+    if (window.currentReportData) {
+        if (exportCsvButton) exportCsvButton.disabled = false;
+        if (exportJsonButton) exportJsonButton.disabled = false;
+    } else {
+         if (!reportContentEl.innerHTML.includes('Erro')) {
+            reportContentEl.innerHTML = '<p class="text-center text-red-500">Falha ao gerar dados para exportação.</p>';
+         }
+    }
   } catch (error) {
-    console.error('Error generating report:', error);
-    showToast('Erro', 'Falha ao gerar relatório', 'error');
+    console.error(`Erro ao gerar relatório (${reportType}, ${reportPeriod}):`, error);
+    showToast('Erro', `Falha ao gerar relatório de ${reportType}.`, 'error');
+    reportContentEl.innerHTML = `<p class="text-center text-red-500">Ocorreu um erro ao gerar o relatório: ${error.message}</p>`;
+  } finally {
+      if (generateButton) generateButton.disabled = false;
   }
 }
 
-// Function to generate summary report
+// --- Funções Geradoras de Relatórios Específicos ---
+
 async function generateSummaryReport(period) {
+  console.log("Gerando Relatório de Resumo para o período:", period);
+  const reportContentEl = document.getElementById('reportContent');
   try {
-    // Get date range for period
-    const { startDate, endDate } = getDateRangeForPeriod(period);
-    
-    // Initialize counters
-    let totalLoaned = 0;
-    let totalReceived = 0;
-    let totalProfit = 0;
-    let totalToReceive = 0;
+    const { startDate, endDate, periodLabel } = getDateRangeForPeriod(period);
+
+    let totalLoanedInPeriod = 0;
+    let totalReceivedInPeriod = 0;
+    let totalDebtAllActiveLoans = 0;
     let activeLoansCount = 0;
-    let paidLoansCount = 0;
-    let clientsCount = 0;
-    let newClientsCount = 0;
-    
-    // Load all loans
+    let loansStartedInPeriodCount = 0;
+    let totalClientsCount = 0;
+    let newClientsInPeriodCount = 0;
+
     const loansSnapshot = await db.collection('loans').get();
-    
-    // Process each loan
+    const allLoans = [];
     loansSnapshot.forEach(doc => {
-      const loan = doc.data();
-      const loanDate = loan.startDate.toDate();
-      
-      // Check if loan is within period
-      if (loanDate >= startDate && loanDate <= endDate) {
-        // Add to total loaned
-        totalLoaned += loan.amount;
-      }
-      
-      // Count active and paid loans
-      if (loan.status === 'active') {
-        activeLoansCount++;
-        
-        // Calculate current debt
-        const { totalDebt } = window.calculateRemainingDebt(loan);
-        totalToReceive += totalDebt;
-      } else if (loan.status === 'paid') {
-        paidLoansCount++;
-      }
+        const loan = doc.data();
+        loan.id = doc.id;
+        if (loan.startDate && typeof loan.startDate.toDate === 'function') {
+            loan.startDate = loan.startDate.toDate();
+        }
+        if (loan.lastPaymentDate && typeof loan.lastPaymentDate.toDate === 'function') {
+            loan.lastPaymentDate = loan.lastPaymentDate.toDate();
+        }
+        allLoans.push(loan);
     });
-    
-    // Load all payments within period
-    const paymentsSnapshot = await db.collection('payments')
-      .where('date', '>=', startDate)
-      .where('date', '<=', endDate)
-      .get();
-    
-    // Process each payment
+
+    for (const loan of allLoans) {
+        if (loan.startDate && loan.startDate >= startDate && loan.startDate <= endDate) {
+            totalLoanedInPeriod += loan.amount;
+            loansStartedInPeriodCount++;
+        }
+        if (loan.status === 'active') {
+            activeLoansCount++;
+            // USA A FUNÇÃO IMPORTADA
+            if (loan.startDate instanceof Date) {
+                const { totalDebt } = calculateRemainingDebt(loan);
+                totalDebtAllActiveLoans += Math.max(0, totalDebt);
+            } else {
+                 console.warn(`Empréstimo ativo ${loan.id} sem data de início válida para cálculo de dívida.`);
+            }
+        }
+    }
+
+    const paymentsQuery = db.collection('payments')
+                            .where('date', '>=', startDate)
+                            .where('date', '<=', endDate);
+    const paymentsSnapshot = await paymentsQuery.get();
     paymentsSnapshot.forEach(doc => {
-      const payment = doc.data();
-      totalReceived += payment.amount;
+      totalReceivedInPeriod += doc.data().amount;
     });
-    
-    // Calculate profit (interest received)
-    totalProfit = totalReceived - totalLoaned;
-    if (totalProfit < 0) totalProfit = 0;
-    
-    // Load clients
+
     const clientsSnapshot = await db.collection('clients').get();
-    clientsCount = clientsSnapshot.size;
-    
-    // Count new clients within period
-    const newClientsSnapshot = await db.collection('clients')
-      .where('createdAt', '>=', startDate)
-      .where('createdAt', '<=', endDate)
-      .get();
-    
-    newClientsCount = newClientsSnapshot.size;
-    
-    // Generate report HTML
+    totalClientsCount = clientsSnapshot.size;
+
+    const newClientsQuery = db.collection('clients')
+                              .where('createdAt', '>=', startDate)
+                              .where('createdAt', '<=', endDate);
+    const newClientsSnapshot = await newClientsQuery.get();
+    newClientsInPeriodCount = newClientsSnapshot.size;
+
+    const cashFlowProfitInPeriod = totalReceivedInPeriod - totalLoanedInPeriod;
+
     const reportHTML = `
       <div class="report-summary">
         <h3>Relatório de Resumo</h3>
-        <p>Período: ${formatDate(startDate)} a ${formatDate(endDate)}</p>
-        
+        <p>Período: ${periodLabel}</p>
         <div class="report-section">
-          <h4>Informações Financeiras</h4>
+          <h4><span class="material-icons">account_balance_wallet</span> Fluxo de Caixa no Período</h4>
           <table class="report-table">
-            <tr>
-              <td>Total Emprestado</td>
-              <td>${formatCurrency(totalLoaned)}</td>
-            </tr>
-            <tr>
-              <td>Total Recebido</td>
-              <td>${formatCurrency(totalReceived)}</td>
-            </tr>
-            <tr>
-              <td>Lucro (Juros)</td>
-              <td>${formatCurrency(totalProfit)}</td>
-            </tr>
-            <tr>
-              <td>Valor a Receber</td>
-              <td>${formatCurrency(totalToReceive)}</td>
-            </tr>
+            <tr><td>Total Emprestado (Iniciados no Período)</td><td>${formatCurrency(totalLoanedInPeriod)}</td></tr>
+            <tr><td>Total Recebido (Pagamentos no Período)</td><td>${formatCurrency(totalReceivedInPeriod)}</td></tr>
+            <tr><td>Resultado (Recebido - Emprestado no Período)</td><td>${formatCurrency(cashFlowProfitInPeriod)}</td></tr>
           </table>
+          <p class="text-xs text-gray-500 mt-1">*Considera apenas empréstimos iniciados e pagamentos recebidos dentro do período selecionado.</p>
         </div>
-        
         <div class="report-section">
-          <h4>Empréstimos</h4>
+          <h4><span class="material-icons">request_quote</span> Situação Geral dos Empréstimos</h4>
           <table class="report-table">
-            <tr>
-              <td>Empréstimos Ativos</td>
-              <td>${activeLoansCount}</td>
-            </tr>
-            <tr>
-              <td>Empréstimos Quitados</td>
-              <td>${paidLoansCount}</td>
-            </tr>
-            <tr>
-              <td>Total de Empréstimos</td>
-              <td>${activeLoansCount + paidLoansCount}</td>
-            </tr>
+            <tr><td>Total de Empréstimos Ativos (Geral)</td><td>${activeLoansCount}</td></tr>
+            <tr><td>Valor Total a Receber (Todos Ativos)</td><td>${formatCurrency(totalDebtAllActiveLoans)}</td></tr>
+            <tr><td>Empréstimos Iniciados no Período</td><td>${loansStartedInPeriodCount}</td></tr>
           </table>
+           <p class="text-xs text-gray-500 mt-1">*Valor a receber considera a dívida atual de todos os empréstimos com status 'ativo'.</p>
         </div>
-        
         <div class="report-section">
-          <h4>Clientes</h4>
+          <h4><span class="material-icons">groups</span> Clientes</h4>
           <table class="report-table">
-            <tr>
-              <td>Total de Clientes</td>
-              <td>${clientsCount}</td>
-            </tr>
-            <tr>
-              <td>Novos Clientes no Período</td>
-              <td>${newClientsCount}</td>
-            </tr>
+            <tr><td>Total de Clientes Cadastrados</td><td>${totalClientsCount}</td></tr>
+            <tr><td>Novos Clientes Cadastrados no Período</td><td>${newClientsInPeriodCount}</td></tr>
           </table>
         </div>
       </div>
     `;
-    
-    // Update report content
-    document.getElementById('reportContent').innerHTML = reportHTML;
-    
-    // Store report data for export
+    reportContentEl.innerHTML = reportHTML;
     window.currentReportData = {
-      reportType: 'summary',
-      period: {
-        start: formatDate(startDate),
-        end: formatDate(endDate)
-      },
-      financial: {
-        totalLoaned,
-        totalReceived,
-        totalProfit,
-        totalToReceive
-      },
-      loans: {
-        active: activeLoansCount,
-        paid: paidLoansCount,
-        total: activeLoansCount + paidLoansCount
-      },
-      clients: {
-        total: clientsCount,
-        new: newClientsCount
-      }
+      reportType: 'summary', period: periodLabel, periodRaw: { start: startDate, end: endDate },
+      cashFlow: { totalLoanedInPeriod, totalReceivedInPeriod, cashFlowProfitInPeriod },
+      loansStatus: { activeLoansCount, totalDebtAllActiveLoans, loansStartedInPeriodCount },
+      clientsStatus: { totalClientsCount, newClientsInPeriodCount }
     };
-    
+    console.log("Relatório de Resumo gerado:", window.currentReportData);
   } catch (error) {
-    console.error('Error generating summary report:', error);
+    console.error('Erro ao gerar relatório de resumo:', error);
     showToast('Erro', 'Falha ao gerar relatório de resumo', 'error');
+    reportContentEl.innerHTML = `<p class="text-center text-red-500">Erro ao gerar resumo: ${error.message}</p>`;
+    window.currentReportData = null;
   }
 }
 
-// Function to generate clients report
 async function generateClientsReport(period) {
+  console.log("Gerando Relatório de Clientes para o período:", period);
+  const reportContentEl = document.getElementById('reportContent');
   try {
-    // Get date range for period
-    const { startDate, endDate } = getDateRangeForPeriod(period);
-    
-    // Load all clients
+    const { startDate, endDate, periodLabel } = getDateRangeForPeriod(period);
     let clientsQuery = db.collection('clients').orderBy('name');
-    
-    // Apply date filter if not "all"
     if (period !== 'all') {
       clientsQuery = clientsQuery.where('createdAt', '>=', startDate)
                                  .where('createdAt', '<=', endDate);
     }
-    
     const clientsSnapshot = await clientsQuery.get();
-    
-    // Process clients
-    const clients = [];
-    
+    console.log(`Encontrados ${clientsSnapshot.size} clientes para o período.`);
+
+    const clientsData = [];
     for (const doc of clientsSnapshot.docs) {
       const client = doc.data();
       client.id = doc.id;
-      
-      // Check if client has active loan
+      if (client.createdAt && typeof client.createdAt.toDate === 'function') {
+          client.createdAtDate = client.createdAt.toDate();
+      } else {
+          client.createdAtDate = null;
+      }
+      client.debt = 0;
       if (client.hasLoan) {
         const loanSnapshot = await db.collection('loans')
           .where('clientId', '==', client.id)
           .where('status', '==', 'active')
-          .get();
-          
+          .limit(1).get();
         if (!loanSnapshot.empty) {
           const loanDoc = loanSnapshot.docs[0];
           const loan = loanDoc.data();
-          
-          // Calculate current debt
-          const { totalDebt } = window.calculateRemainingDebt(loan);
-          client.debt = totalDebt;
+           if (loan.startDate && typeof loan.startDate.toDate === 'function') {
+               loan.startDate = loan.startDate.toDate();
+           }
+           if (loan.lastPaymentDate && typeof loan.lastPaymentDate.toDate === 'function') {
+               loan.lastPaymentDate = loan.lastPaymentDate.toDate();
+           }
+           // USA A FUNÇÃO IMPORTADA
+           if (loan.startDate instanceof Date) {
+               const { totalDebt } = calculateRemainingDebt(loan);
+               client.debt = Math.max(0, totalDebt);
+           } else {
+               console.warn(`Não foi possível calcular dívida para cliente ${client.id}. Data de início do empréstimo inválida.`);
+               client.debt = 'Erro';
+           }
+        } else {
+            console.warn(`Cliente ${client.id} (${client.name}) marcado com hasLoan=true, mas nenhum empréstimo ativo encontrado.`);
         }
       }
-      
-      clients.push(client);
+      clientsData.push(client);
     }
-    
-    // Generate report HTML
+
     let reportHTML = `
       <div class="report-clients">
         <h3>Relatório de Clientes</h3>
-        <p>Período: ${formatDate(startDate)} a ${formatDate(endDate)}</p>
-        <p>Total de Clientes: ${clients.length}</p>
-        
-        <table class="report-table full-width">
-          <thead>
-            <tr>
-              <th>Nome</th>
-              <th>Telefone</th>
-              <th>CPF</th>
-              <th>Data de Cadastro</th>
-              <th>Status</th>
-              <th>Dívida Atual</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-    
-    clients.forEach(client => {
-      const createdAt = client.createdAt ? formatDate(client.createdAt.toDate()) : 'N/A';
-      const status = client.hasLoan ? 'Com empréstimo' : 'Sem empréstimo';
-      const debt = client.debt ? formatCurrency(client.debt) : '-';
-      
-      reportHTML += `
-        <tr>
-          <td>${client.name}</td>
-          <td>${client.phone || '-'}</td>
-          <td>${client.cpf || '-'}</td>
-          <td>${createdAt}</td>
-          <td>${status}</td>
-          <td>${debt}</td>
-        </tr>
-      `;
-    });
-    
-    reportHTML += `
-          </tbody>
-        </table>
-      </div>
-    `;
-    
-    // Update report content
-    document.getElementById('reportContent').innerHTML = reportHTML;
-    
-    // Store report data for export
+        <p>Período de Cadastro: ${periodLabel}</p>
+        <p>Total de Clientes Listados: ${clientsData.length}</p>
+        <table class="report-table full-width striped">
+          <thead><tr><th>Nome</th><th>Telefone</th><th>CPF</th><th>Cadastrado em</th><th>Status Empréstimo</th><th>Dívida Atual</th></tr></thead>
+          <tbody>`;
+    if (clientsData.length === 0) {
+        reportHTML += '<tr><td colspan="6" class="text-center py-4">Nenhum cliente encontrado para este período.</td></tr>';
+    } else {
+        clientsData.forEach(client => {
+          const createdAtFormatted = client.createdAtDate ? formatDate(client.createdAtDate) : 'N/D';
+          const status = client.hasLoan ? 'Ativo' : 'Sem Empréstimo';
+          const statusClass = client.hasLoan ? 'status-active' : 'status-inactive';
+          const debtFormatted = typeof client.debt === 'number' ? formatCurrency(client.debt) : (client.debt === 'Erro' ? '<span class="text-red-500">Erro</span>' : '-');
+          const debtClass = client.debt > 0 ? 'negative' : (client.debt === 0 ? 'neutral' : '');
+          reportHTML += `<tr><td>${client.name || 'Sem nome'}</td><td>${client.phone || '-'}</td><td>${client.cpf || '-'}</td><td>${createdAtFormatted}</td><td><span class="${statusClass}">${status}</span></td><td class="${debtClass}">${debtFormatted}</td></tr>`;
+        });
+    }
+    reportHTML += `</tbody></table></div>`;
+    reportContentEl.innerHTML = reportHTML;
     window.currentReportData = {
-      reportType: 'clients',
-      period: {
-        start: formatDate(startDate),
-        end: formatDate(endDate)
-      },
-      clientsCount: clients.length,
-      clients: clients.map(client => ({
-        name: client.name,
-        phone: client.phone || '',
-        cpf: client.cpf || '',
-        createdAt: client.createdAt ? formatDate(client.createdAt.toDate()) : '',
-        hasLoan: client.hasLoan,
-        debt: client.debt || 0
+      reportType: 'clients', period: periodLabel, periodRaw: { start: startDate, end: endDate },
+      clientsCount: clientsData.length,
+      clients: clientsData.map(client => ({
+        name: client.name || '', phone: client.phone || '', cpf: client.cpf || '',
+        createdAt: client.createdAtDate ? formatDate(client.createdAtDate) : '',
+        hasLoan: client.hasLoan || false, debt: typeof client.debt === 'number' ? client.debt : 0
       }))
     };
-    
+    console.log("Relatório de Clientes gerado.");
   } catch (error) {
-    console.error('Error generating clients report:', error);
+    console.error('Erro ao gerar relatório de clientes:', error);
     showToast('Erro', 'Falha ao gerar relatório de clientes', 'error');
+    reportContentEl.innerHTML = `<p class="text-center text-red-500">Erro ao gerar relatório de clientes: ${error.message}</p>`;
+    window.currentReportData = null;
   }
 }
 
-// Function to generate loans report
 async function generateLoansReport(period) {
+  console.log("Gerando Relatório de Empréstimos para o período:", period);
+  const reportContentEl = document.getElementById('reportContent');
   try {
-    // Get date range for period
-    const { startDate, endDate } = getDateRangeForPeriod(period);
-    
-    // Load all loans
+    const { startDate, endDate, periodLabel } = getDateRangeForPeriod(period);
     let loansQuery = db.collection('loans').orderBy('startDate', 'desc');
-    
-    // Apply date filter if not "all"
     if (period !== 'all') {
       loansQuery = loansQuery.where('startDate', '>=', startDate)
                              .where('startDate', '<=', endDate);
     }
-    
     const loansSnapshot = await loansQuery.get();
-    
-    // Process loans
-    const loans = [];
-    const clientNames = {}; // Cache client names
-    
+    console.log(`Encontrados ${loansSnapshot.size} empréstimos para o período.`);
+
+    const loansData = [];
+    const clientNamesCache = {};
     for (const doc of loansSnapshot.docs) {
       const loan = doc.data();
       loan.id = doc.id;
-      
-      // Get client name if not cached
-      if (!clientNames[loan.clientId]) {
-        const clientDoc = await db.collection('clients').doc(loan.clientId).get();
-        if (clientDoc.exists) {
-          clientNames[loan.clientId] = clientDoc.data().name;
-        } else {
-          clientNames[loan.clientId] = 'Cliente não encontrado';
-        }
+       if (loan.startDate && typeof loan.startDate.toDate === 'function') {
+           loan.startDate = loan.startDate.toDate();
+       }
+       if (loan.lastPaymentDate && typeof loan.lastPaymentDate.toDate === 'function') {
+           loan.lastPaymentDate = loan.lastPaymentDate.toDate();
+       }
+      if (!clientNamesCache[loan.clientId]) {
+          try {
+              const clientDoc = await db.collection('clients').doc(loan.clientId).get();
+              clientNamesCache[loan.clientId] = clientDoc.exists ? clientDoc.data().name : 'Cliente Excluído';
+          } catch (e) {
+              console.error(`Erro ao buscar cliente ${loan.clientId}`, e);
+              clientNamesCache[loan.clientId] = 'Erro ao buscar';
+          }
       }
-      
-      loan.clientName = clientNames[loan.clientId];
-      
-      // Calculate current debt for active loans
+      loan.clientName = clientNamesCache[loan.clientId];
+      loan.currentDebt = 0;
       if (loan.status === 'active') {
-        const { totalDebt } = window.calculateRemainingDebt(loan);
-        loan.currentDebt = totalDebt;
-      } else {
-        loan.currentDebt = 0;
+          // USA A FUNÇÃO IMPORTADA
+          if (loan.startDate instanceof Date) {
+              const { totalDebt } = calculateRemainingDebt(loan);
+              loan.currentDebt = Math.max(0, totalDebt);
+          } else {
+              console.warn(`Não foi possível calcular dívida para empréstimo ${loan.id}. Data de início inválida.`);
+              loan.currentDebt = 'Erro';
+          }
       }
-      
-      loans.push(loan);
+      loansData.push(loan);
     }
-    
-    // Calculate totals
-    const totalLoaned = loans.reduce((total, loan) => total + loan.amount, 0);
-    const totalPaid = loans.reduce((total, loan) => total + (loan.totalPaid || 0), 0);
-    const totalDebt = loans.reduce((total, loan) => total + loan.currentDebt, 0);
-    
-    // Generate report HTML
+
+    const totalLoaned = loansData.reduce((sum, loan) => sum + loan.amount, 0);
+    const totalPaid = loansData.reduce((sum, loan) => sum + (loan.totalPaid || 0), 0);
+    const totalCurrentDebt = loansData.reduce((sum, loan) => sum + (typeof loan.currentDebt === 'number' ? loan.currentDebt : 0), 0);
+
     let reportHTML = `
       <div class="report-loans">
         <h3>Relatório de Empréstimos</h3>
-        <p>Período: ${formatDate(startDate)} a ${formatDate(endDate)}</p>
-        <p>Total de Empréstimos: ${loans.length}</p>
-        
-        <div class="report-summary">
+        <p>Período de Início: ${periodLabel}</p>
+        <p>Total de Empréstimos Listados: ${loansData.length}</p>
+        <div class="report-summary mb-4">
+          <h4 class="text-lg font-semibold mb-2">Resumo do Período</h4>
           <table class="report-table">
-            <tr>
-              <td>Total Emprestado</td>
-              <td>${formatCurrency(totalLoaned)}</td>
-            </tr>
-            <tr>
-              <td>Total Pago</td>
-              <td>${formatCurrency(totalPaid)}</td>
-            </tr>
-            <tr>
-              <td>Total em Aberto</td>
-              <td>${formatCurrency(totalDebt)}</td>
-            </tr>
+            <tr><td>Total Emprestado</td><td>${formatCurrency(totalLoaned)}</td></tr>
+            <tr><td>Total Pago (nestes empréstimos)</td><td>${formatCurrency(totalPaid)}</td></tr>
+            <tr><td>Saldo Devedor (nestes empréstimos)</td><td>${formatCurrency(totalCurrentDebt)}</td></tr>
           </table>
         </div>
-        
-        <table class="report-table full-width">
-          <thead>
-            <tr>
-              <th>Cliente</th>
-              <th>Valor</th>
-              <th>Taxa</th>
-              <th>Data</th>
-              <th>Status</th>
-              <th>Pago</th>
-              <th>Em Aberto</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-    
-    loans.forEach(loan => {
-      const startDate = formatDate(loan.startDate.toDate());
-      const status = loan.status === 'active' ? 'Ativo' : 'Quitado';
-      const statusClass = loan.status === 'active' ? 'status-active' : 'status-paid';
-      
-      reportHTML += `
-        <tr>
-          <td>${loan.clientName}</td>
-          <td>${formatCurrency(loan.amount)}</td>
-          <td>${loan.interestRate}%</td>
-          <td>${startDate}</td>
-          <td class="${statusClass}">${status}</td>
-          <td>${formatCurrency(loan.totalPaid || 0)}</td>
-          <td>${formatCurrency(loan.currentDebt)}</td>
-        </tr>
-      `;
-    });
-    
-    reportHTML += `
-          </tbody>
-        </table>
-      </div>
-    `;
-    
-    // Update report content
-    document.getElementById('reportContent').innerHTML = reportHTML;
-    
-    // Store report data for export
+        <table class="report-table full-width striped">
+          <thead><tr><th>Cliente</th><th>Valor Emprestado</th><th>Taxa Juros (%)</th><th>Data Início</th><th>Status</th><th>Total Pago</th><th>Dívida Atual</th></tr></thead>
+          <tbody>`;
+    if (loansData.length === 0) {
+        reportHTML += '<tr><td colspan="7" class="text-center py-4">Nenhum empréstimo encontrado para este período.</td></tr>';
+    } else {
+        loansData.forEach(loan => {
+          const startDateFormatted = loan.startDate instanceof Date ? formatDate(loan.startDate) : 'N/D';
+          const statusText = loan.status === 'active' ? 'Ativo' : (loan.status === 'paid' ? 'Quitado' : loan.status);
+          const statusClass = loan.status === 'active' ? 'status-active' : (loan.status === 'paid' ? 'status-paid' : 'status-inactive');
+          const debtFormatted = typeof loan.currentDebt === 'number' ? formatCurrency(loan.currentDebt) : (loan.currentDebt === 'Erro' ? '<span class="text-red-500">Erro</span>' : '-');
+          const debtClass = loan.currentDebt > 0 ? 'negative' : (loan.currentDebt === 0 && loan.status === 'active' ? 'neutral' : '');
+          reportHTML += `<tr><td>${loan.clientName || 'N/D'}</td><td>${formatCurrency(loan.amount)}</td><td>${loan.interestRate || 0}%</td><td>${startDateFormatted}</td><td><span class="${statusClass}">${statusText}</span></td><td>${formatCurrency(loan.totalPaid || 0)}</td><td class="${debtClass}">${debtFormatted}</td></tr>`;
+        });
+    }
+    reportHTML += `</tbody></table></div>`;
+    reportContentEl.innerHTML = reportHTML;
     window.currentReportData = {
-      reportType: 'loans',
-      period: {
-        start: formatDate(startDate),
-        end: formatDate(endDate)
-      },
-      summary: {
-        totalLoaned,
-        totalPaid,
-        totalDebt,
-        count: loans.length
-      },
-      loans: loans.map(loan => ({
-        clientName: loan.clientName,
-        amount: loan.amount,
-        interestRate: loan.interestRate,
-        startDate: formatDate(loan.startDate.toDate()),
-        status: loan.status,
-        totalPaid: loan.totalPaid || 0,
-        currentDebt: loan.currentDebt
+      reportType: 'loans', period: periodLabel, periodRaw: { start: startDate, end: endDate },
+      summary: { totalLoaned, totalPaid, totalCurrentDebt, count: loansData.length },
+      loans: loansData.map(loan => ({
+        clientName: loan.clientName || '', amount: loan.amount || 0, interestRate: loan.interestRate || 0,
+        startDate: loan.startDate instanceof Date ? formatDate(loan.startDate) : '',
+        status: loan.status || 'unknown', totalPaid: loan.totalPaid || 0,
+        currentDebt: typeof loan.currentDebt === 'number' ? loan.currentDebt : 0
       }))
     };
-    
+    console.log("Relatório de Empréstimos gerado.");
   } catch (error) {
-    console.error('Error generating loans report:', error);
+    console.error('Erro ao gerar relatório de empréstimos:', error);
     showToast('Erro', 'Falha ao gerar relatório de empréstimos', 'error');
+    reportContentEl.innerHTML = `<p class="text-center text-red-500">Erro ao gerar relatório de empréstimos: ${error.message}</p>`;
+    window.currentReportData = null;
   }
 }
 
-// Function to generate payments report
 async function generatePaymentsReport(period) {
+  console.log("Gerando Relatório de Pagamentos para o período:", period);
+  const reportContentEl = document.getElementById('reportContent');
   try {
-    // Get date range for period
-    const { startDate, endDate } = getDateRangeForPeriod(period);
-    
-    // Load all payments
+    const { startDate, endDate, periodLabel } = getDateRangeForPeriod(period);
     let paymentsQuery = db.collection('payments').orderBy('date', 'desc');
-    
-    // Apply date filter if not "all"
     if (period !== 'all') {
       paymentsQuery = paymentsQuery.where('date', '>=', startDate)
                                    .where('date', '<=', endDate);
     }
-    
     const paymentsSnapshot = await paymentsQuery.get();
-    
-    // Process payments
-    const payments = [];
-    const clientNames = {}; // Cache client names
-    
+    console.log(`Encontrados ${paymentsSnapshot.size} pagamentos para o período.`);
+
+    const paymentsData = [];
+    const clientNamesCache = {};
     for (const doc of paymentsSnapshot.docs) {
       const payment = doc.data();
       payment.id = doc.id;
-      
-      // Get client name if not cached
-      if (!clientNames[payment.clientId]) {
-        const clientDoc = await db.collection('clients').doc(payment.clientId).get();
-        if (clientDoc.exists) {
-          clientNames[payment.clientId] = clientDoc.data().name;
-        } else {
-          clientNames[payment.clientId] = 'Cliente não encontrado';
-        }
+      if (payment.date && typeof payment.date.toDate === 'function') {
+          payment.date = payment.date.toDate();
       }
-      
-      payment.clientName = clientNames[payment.clientId];
-      payments.push(payment);
+      if (payment.clientName) {
+          clientNamesCache[payment.clientId] = payment.clientName;
+      } else if (!clientNamesCache[payment.clientId]) {
+           try {
+              const clientDoc = await db.collection('clients').doc(payment.clientId).get();
+              clientNamesCache[payment.clientId] = clientDoc.exists ? clientDoc.data().name : 'Cliente Excluído';
+          } catch (e) {
+              console.error(`Erro ao buscar cliente ${payment.clientId}`, e);
+              clientNamesCache[payment.clientId] = 'Erro ao buscar';
+          }
+      }
+      payment.clientName = clientNamesCache[payment.clientId];
+      paymentsData.push(payment);
     }
-    
-    // Calculate total
-    const totalAmount = payments.reduce((total, payment) => total + payment.amount, 0);
-    
-    // Generate report HTML
+
+    const totalReceived = paymentsData.reduce((sum, payment) => sum + payment.amount, 0);
+
     let reportHTML = `
       <div class="report-payments">
-        <h3>Relatório de Pagamentos</h3>
-        <p>Período: ${formatDate(startDate)} a ${formatDate(endDate)}</p>
-        <p>Total de Pagamentos: ${payments.length}</p>
-        <p>Valor Total: ${formatCurrency(totalAmount)}</p>
-        
-        <table class="report-table full-width">
-          <thead>
-            <tr>
-              <th>Cliente</th>
-              <th>Data</th>
-              <th>Valor</th>
-              <th>Observações</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-    
-    payments.forEach(payment => {
-      const paymentDate = formatDate(payment.date.toDate());
-      
-      reportHTML += `
-        <tr>
-          <td>${payment.clientName}</td>
-          <td>${paymentDate}</td>
-          <td>${formatCurrency(payment.amount)}</td>
-          <td>${payment.notes || '-'}</td>
-        </tr>
-      `;
-    });
-    
-    reportHTML += `
-          </tbody>
-        </table>
-      </div>
-    `;
-    
-    // Update report content
-    document.getElementById('reportContent').innerHTML = reportHTML;
-    
-    // Store report data for export
+        <h3>Relatório de Pagamentos Recebidos</h3>
+        <p>Período do Pagamento: ${periodLabel}</p>
+        <p>Total de Pagamentos Listados: ${paymentsData.length}</p>
+        <p>Valor Total Recebido: ${formatCurrency(totalReceived)}</p>
+        <table class="report-table full-width striped">
+          <thead><tr><th>Cliente</th><th>Data Pagamento</th><th>Valor Pago</th><th>Observações</th></tr></thead>
+          <tbody>`;
+    if (paymentsData.length === 0) {
+        reportHTML += '<tr><td colspan="4" class="text-center py-4">Nenhum pagamento encontrado para este período.</td></tr>';
+    } else {
+        paymentsData.forEach(payment => {
+          const paymentDateFormatted = payment.date instanceof Date ? formatDate(payment.date) : 'N/D';
+          reportHTML += `<tr><td>${payment.clientName || 'N/D'}</td><td>${paymentDateFormatted}</td><td class="positive">${formatCurrency(payment.amount)}</td><td>${payment.notes || '-'}</td></tr>`;
+        });
+    }
+    reportHTML += `</tbody></table></div>`;
+    reportContentEl.innerHTML = reportHTML;
     window.currentReportData = {
-      reportType: 'payments',
-      period: {
-        start: formatDate(startDate),
-        end: formatDate(endDate)
-      },
-      summary: {
-        totalAmount,
-        count: payments.length
-      },
-      payments: payments.map(payment => ({
-        clientName: payment.clientName,
-        date: formatDate(payment.date.toDate()),
-        amount: payment.amount,
-        notes: payment.notes || ''
+      reportType: 'payments', period: periodLabel, periodRaw: { start: startDate, end: endDate },
+      summary: { totalReceived, count: paymentsData.length },
+      payments: paymentsData.map(payment => ({
+        clientName: payment.clientName || '',
+        date: payment.date instanceof Date ? formatDate(payment.date) : '',
+        amount: payment.amount || 0, notes: payment.notes || ''
       }))
     };
-    
+    console.log("Relatório de Pagamentos gerado.");
   } catch (error) {
-    console.error('Error generating payments report:', error);
+    console.error('Erro ao gerar relatório de pagamentos:', error);
     showToast('Erro', 'Falha ao gerar relatório de pagamentos', 'error');
+    reportContentEl.innerHTML = `<p class="text-center text-red-500">Erro ao gerar relatório de pagamentos: ${error.message}</p>`;
+    window.currentReportData = null;
   }
 }
 
-// Function to export report data
+// --- Funções de Exportação ---
 function exportReport(format) {
+  console.log(`Tentando exportar relatório como ${format}`);
   try {
     if (!window.currentReportData) {
-      showToast('Erro', 'Nenhum relatório para exportar', 'error');
+      showToast('Erro', 'Gere um relatório antes de tentar exportar.', 'error');
       return;
     }
-    
-    let data;
+    let dataString;
     let filename;
     let contentType;
-    
-    // Format data based on export type
     if (format === 'csv') {
-      data = convertToCSV(window.currentReportData);
-      filename = `relatorio_${window.currentReportData.reportType}_${formatDateFilename(new Date())}.csv`;
-      contentType = 'text/csv';
+      dataString = '\uFEFF' + convertToCSV(window.currentReportData); // Adiciona BOM
+      filename = `Relatorio_${window.currentReportData.reportType}_${formatDateFilename(new Date())}.csv`;
+      contentType = 'text/csv;charset=utf-8;';
+    } else if (format === 'json') {
+      dataString = JSON.stringify(window.currentReportData, null, 2);
+      filename = `Relatorio_${window.currentReportData.reportType}_${formatDateFilename(new Date())}.json`;
+      contentType = 'application/json;charset=utf-8;';
     } else {
-      data = JSON.stringify(window.currentReportData, null, 2);
-      filename = `relatorio_${window.currentReportData.reportType}_${formatDateFilename(new Date())}.json`;
-      contentType = 'application/json';
+        showToast('Erro', 'Formato de exportação inválido.', 'error');
+        return;
     }
-    
-    // Create download link
-    const blob = new Blob([data], { type: contentType });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([dataString], { type: contentType });
     const link = document.createElement('a');
-    link.href = url;
+    link.href = URL.createObjectURL(blob);
     link.download = filename;
-    
-    // Trigger download
+    link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
-    showToast('Sucesso', 'Relatório exportado com sucesso!', 'success');
-    
+    URL.revokeObjectURL(link.href);
+    showToast('Sucesso', `Relatório exportado como ${format.toUpperCase()}!`, 'success');
   } catch (error) {
-    console.error('Error exporting report:', error);
-    showToast('Erro', 'Falha ao exportar relatório', 'error');
+    console.error('Erro ao exportar relatório:', error);
+    showToast('Erro', 'Falha ao exportar relatório.', 'error');
   }
 }
 
-// Function to convert report data to CSV
 function convertToCSV(reportData) {
+  if (!reportData || !reportData.reportType) return '';
   let csv = '';
-  
-  // Generate CSV based on report type
-  switch (reportData.reportType) {
-    case 'summary':
-      csv = 'Categoria,Item,Valor\n';
-      
-      // Financial data
-      csv += `Financeiro,Total Emprestado,${reportData.financial.totalLoaned}\n`;
-      csv += `Financeiro,Total Recebido,${reportData.financial.totalReceived}\n`;
-      csv += `Financeiro,Lucro (Juros),${reportData.financial.totalProfit}\n`;
-      csv += `Financeiro,Valor a Receber,${reportData.financial.totalToReceive}\n`;
-      
-      // Loans data
-      csv += `Empréstimos,Empréstimos Ativos,${reportData.loans.active}\n`;
-      csv += `Empréstimos,Empréstimos Quitados,${reportData.loans.paid}\n`;
-      csv += `Empréstimos,Total de Empréstimos,${reportData.loans.total}\n`;
-      
-      // Clients data
-      csv += `Clientes,Total de Clientes,${reportData.clients.total}\n`;
-      csv += `Clientes,Novos Clientes no Período,${reportData.clients.new}\n`;
-      break;
-      
-    case 'clients':
-      csv = 'Nome,Telefone,CPF,Data de Cadastro,Status,Dívida Atual\n';
-      
-      reportData.clients.forEach(client => {
-        const status = client.hasLoan ? 'Com empréstimo' : 'Sem empréstimo';
-        csv += `"${client.name}","${client.phone}","${client.cpf}","${client.createdAt}","${status}",${client.debt}\n`;
-      });
-      break;
-      
-    case 'loans':
-      csv = 'Cliente,Valor,Taxa de Juros,Data,Status,Total Pago,Em Aberto\n';
-      
-      reportData.loans.forEach(loan => {
-        const status = loan.status === 'active' ? 'Ativo' : 'Quitado';
-        csv += `"${loan.clientName}",${loan.amount},${loan.interestRate},"${loan.startDate}","${status}",${loan.totalPaid},${loan.currentDebt}\n`;
-      });
-      break;
-      
-    case 'payments':
-      csv = 'Cliente,Data,Valor,Observações\n';
-      
-      reportData.payments.forEach(payment => {
-        csv += `"${payment.clientName}","${payment.date}",${payment.amount},"${payment.notes}"\n`;
-      });
-      break;
+  let headers = [];
+  let rows = [];
+  try {
+      switch (reportData.reportType) {
+        case 'summary':
+          headers = ['Categoria', 'Item', 'Valor'];
+          rows.push(['Fluxo de Caixa', 'Total Emprestado (Período)', reportData.cashFlow.totalLoanedInPeriod]);
+          rows.push(['Fluxo de Caixa', 'Total Recebido (Período)', reportData.cashFlow.totalReceivedInPeriod]);
+          rows.push(['Fluxo de Caixa', 'Resultado (Período)', reportData.cashFlow.cashFlowProfitInPeriod]);
+          rows.push(['Situação Empréstimos', 'Total Ativos (Geral)', reportData.loansStatus.activeLoansCount]);
+          rows.push(['Situação Empréstimos', 'Valor a Receber (Todos Ativos)', reportData.loansStatus.totalDebtAllActiveLoans]);
+          rows.push(['Situação Empréstimos', 'Iniciados no Período', reportData.loansStatus.loansStartedInPeriodCount]);
+          rows.push(['Clientes', 'Total Cadastrados', reportData.clientsStatus.totalClientsCount]);
+          rows.push(['Clientes', 'Novos no Período', reportData.clientsStatus.newClientsInPeriodCount]);
+          break;
+        case 'clients':
+          headers = ['Nome', 'Telefone', 'CPF', 'Data Cadastro', 'Status Empréstimo', 'Dívida Atual'];
+          reportData.clients.forEach(client => {
+            rows.push([client.name, client.phone, client.cpf, client.createdAt, (client.hasLoan ? 'Ativo' : 'Sem Empréstimo'), client.debt]);
+          });
+          break;
+        case 'loans':
+          headers = ['Cliente', 'Valor Emprestado', 'Taxa Juros (%)', 'Data Início', 'Status', 'Total Pago', 'Dívida Atual'];
+          reportData.loans.forEach(loan => {
+            rows.push([loan.clientName, loan.amount, loan.interestRate, loan.startDate, (loan.status === 'active' ? 'Ativo' : (loan.status === 'paid' ? 'Quitado' : loan.status)), loan.totalPaid, loan.currentDebt]);
+          });
+          break;
+        case 'payments':
+          headers = ['Cliente', 'Data Pagamento', 'Valor Pago', 'Observações'];
+          reportData.payments.forEach(payment => {
+            rows.push([payment.clientName, payment.date, payment.amount, payment.notes]);
+          });
+          break;
+        default: return '';
+      }
+      const escapeCsvCell = (cell) => {
+          const cellStr = String(cell === null || cell === undefined ? '' : cell);
+          if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+              return `"${cellStr.replace(/"/g, '""')}"`;
+          }
+          return cellStr;
+      };
+      csv += headers.map(escapeCsvCell).join(',') + '\n';
+      rows.forEach(row => { csv += row.map(escapeCsvCell).join(',') + '\n'; });
+  } catch (e) {
+      console.error("Erro ao converter dados para CSV:", e);
+      showToast('Erro', 'Erro interno ao formatar dados para CSV.', 'error');
+      return '';
   }
-  
   return csv;
 }
 
-// Helper function to get date range for period
+// --- Funções Auxiliares ---
 function getDateRangeForPeriod(period) {
   const endDate = new Date();
+  endDate.setHours(23, 59, 59, 999);
   let startDate = new Date();
-  
+  let periodLabel = '';
   switch (period) {
-    case 'month':
-      startDate.setMonth(endDate.getMonth() - 1);
-      break;
-    case 'quarter':
-      startDate.setMonth(endDate.getMonth() - 3);
-      break;
-    case 'year':
-      startDate.setFullYear(endDate.getFullYear() - 1);
-      break;
-    case 'all':
-    default:
-      startDate = new Date(0); // Beginning of time
-      break;
+    case 'today': startDate.setHours(0, 0, 0, 0); periodLabel = `Hoje (${formatDate(startDate)})`; break;
+    case 'week': startDate.setDate(endDate.getDate() - 7); startDate.setHours(0, 0, 0, 0); periodLabel = `Últimos 7 dias (${formatDate(startDate)} a ${formatDate(endDate)})`; break;
+    case 'month': startDate = new Date(endDate.getFullYear(), endDate.getMonth() - 1, endDate.getDate()); startDate.setHours(0, 0, 0, 0); periodLabel = `Último Mês (${formatDate(startDate)} a ${formatDate(endDate)})`; break;
+    case 'quarter': startDate = new Date(endDate.getFullYear(), endDate.getMonth() - 3, endDate.getDate()); startDate.setHours(0, 0, 0, 0); periodLabel = `Último Trimestre (${formatDate(startDate)} a ${formatDate(endDate)})`; break;
+    case 'year': startDate = new Date(endDate.getFullYear() - 1, endDate.getMonth(), endDate.getDate()); startDate.setHours(0, 0, 0, 0); periodLabel = `Último Ano (${formatDate(startDate)} a ${formatDate(endDate)})`; break;
+    case 'all': default: startDate = new Date(0); periodLabel = 'Todo o Período'; break;
   }
-  
-  return { startDate, endDate };
+  return { startDate, endDate, periodLabel };
 }
 
-// Helper function to format date
 function formatDate(date) {
-  return date.toLocaleDateString('pt-BR');
+   if (!(date instanceof Date) || isNaN(date)) return 'Inválida';
+  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-// Helper function to format date for filenames
 function formatDateFilename(date) {
+   if (!(date instanceof Date) || isNaN(date)) date = new Date();
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}${month}${day}`;
 }
 
-// Helper function to format currency
 function formatCurrency(value) {
-  return `R$ ${value.toFixed(2)}`;
+  if (typeof value !== 'number' || isNaN(value)) return 'R$ -';
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }

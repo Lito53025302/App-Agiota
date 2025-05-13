@@ -1,222 +1,313 @@
 // Loan management functionality
-import { getFirestore } from './firebase.js';
-import { showToast } from './ui.js';
 
-let db;
-let currentLoan = null;
+// Importar do seu firebase.js:
+import { getDbInstance } from './firebase.js';
+// Nota: Não precisamos de initializeFirebase, getAuthInstance ou getStorageInstance aqui.
 
+// Importa funções de UI
+import { showToast } from './ui.js'; // Certifique-se que ui.js exporta showToast
+
+let db; // DECLARADO AQUI, mas não inicializado
+
+let currentLoan = null; // Armazena o empréstimo ativo do cliente atual
+
+// Função chamada por app.js para inicializar este módulo
 export function setupLoanManagement() {
-  db = getFirestore();
-  
-  // Expose necessary functions globally
-  window.addLoan = addLoan;
-  window.loadClientLoan = loadClientLoan;
-  window.calculateRemainingDebt = calculateRemainingDebt;
+  try {
+    // OBTÉM A INSTÂNCIA AQUI, APÓS FIREBASE SER INICIALIZADO PELO APP.JS
+    db = getDbInstance();
+
+    // Verifica se a instância foi obtida com sucesso
+    if (!db) {
+      console.error("Falha ao obter instância do Firestore em loans.js. O módulo pode não funcionar.");
+      showToast('Erro Crítico', 'Falha ao conectar com banco de dados (Empréstimos).', 'error');
+      return; // Impede a continuação se o DB não estiver disponível
+    }
+
+    // Expõe funções necessárias globalmente (mantendo padrão original)
+    window.addLoan = addLoan;
+    window.loadClientLoan = loadClientLoan;
+    // window.calculateRemainingDebt = calculateRemainingDebt; // Expor cálculo pode não ser necessário globalmente?
+                                                            // É usado internamente por loadClientLoan.
+                                                            // Mantenha se precisar chamar de outro lugar.
+
+    console.log("Módulo de Gerenciamento de Empréstimos configurado.");
+
+  } catch (error) {
+    console.error("Erro configurando Loan Management:", error);
+    showToast('Erro', 'Falha ao iniciar módulo de empréstimos.', 'error');
+  }
 }
 
-// Function to add a new loan
+// Função para adicionar um novo empréstimo
 async function addLoan() {
+  if (!db) { // Verificação crucial
+    showToast('Erro', 'Banco de dados não inicializado (addLoan).', 'error');
+    return;
+  }
+
   try {
-    // Get input values
     const amountInput = document.getElementById('loanAmount');
     const interestRateInput = document.getElementById('interestRate');
-    
-    const amount = parseFloat(amountInput.value);
-    const interestRate = parseFloat(interestRateInput.value);
-    
-    // Validate inputs
+
+    if (!amountInput || !interestRateInput) {
+        showToast('Erro', 'Elementos do formulário de empréstimo não encontrados.', 'error');
+        return;
+    }
+
+    const amount = parseFloat(amountInput.value.replace(',', '.'));
+    const interestRate = parseFloat(interestRateInput.value.replace(',', '.'));
+
     if (isNaN(amount) || amount <= 0) {
-      showToast('Atenção', 'Digite um valor válido para o empréstimo', 'warning');
+      showToast('Atenção', 'Digite um valor válido para o empréstimo (maior que zero).', 'warning');
+      amountInput.focus();
       return;
     }
-    
-    if (isNaN(interestRate) || interestRate < 0 || interestRate > 100) {
-      showToast('Atenção', 'Digite uma taxa de juros válida (0-100%)', 'warning');
+
+    if (isNaN(interestRate) || interestRate < 0) {
+      showToast('Atenção', 'Digite uma taxa de juros válida (maior ou igual a zero).', 'warning');
+      interestRateInput.focus();
       return;
     }
-    
-    // Get current client ID
-    const clientId = window.currentClient?.id;
-    
-    if (!clientId) {
-      showToast('Erro', 'Nenhum cliente selecionado', 'error');
+
+    const currentClient = window.currentClient;
+    const clientId = currentClient?.id;
+
+    if (!clientId || !currentClient) {
+      showToast('Erro', 'Nenhum cliente selecionado para adicionar empréstimo.', 'error');
       return;
     }
-    
-    // Check if client already has a loan
-    const clientDoc = await db.collection('clients').doc(clientId).get();
-    const clientData = clientDoc.data();
-    
-    if (clientData.hasLoan) {
-      showToast('Atenção', 'Este cliente já possui um empréstimo ativo', 'warning');
+
+    if (currentClient.hasLoan) {
+      showToast('Atenção', `O cliente ${currentClient.name} já possui um empréstimo ativo.`, 'warning');
       return;
     }
-    
-    // Create loan object
-    const loan = {
+
+    const loanData = {
       clientId,
+      clientName: currentClient.name,
       amount,
       interestRate,
-      startDate: new Date(),
+      startDate: firebase.firestore.FieldValue.serverTimestamp(),
       status: 'active',
       totalPaid: 0,
+      paymentHistory: [],
       lastPaymentDate: null
     };
-    
-    // Add loan to Firestore
-    const loanRef = await db.collection('loans').add(loan);
-    
-    // Update client hasLoan status
+
+    console.log("Adicionando empréstimo:", loanData);
+
+    const loanRef = await db.collection('loans').add(loanData);
+    console.log("Empréstimo adicionado com ID:", loanRef.id);
+
     await db.collection('clients').doc(clientId).update({
       hasLoan: true
     });
-    
-    // Update current client object
+    console.log("Status 'hasLoan' do cliente atualizado para true.");
+
     window.currentClient.hasLoan = true;
-    
+
     showToast('Sucesso', 'Empréstimo registrado com sucesso!', 'success');
-    
-    // Clear inputs
+
     amountInput.value = '';
     interestRateInput.value = '';
-    
-    // Reload loan info
+
     await loadClientLoan(clientId);
-    
+
+    const newLoanSectionEl = document.getElementById('newLoanSection');
+    if (newLoanSectionEl) newLoanSectionEl.classList.add('hidden');
+
   } catch (error) {
-    console.error('Error adding loan:', error);
+    console.error('Erro ao adicionar empréstimo:', error);
     showToast('Erro', 'Falha ao registrar empréstimo. Tente novamente.', 'error');
   }
 }
 
-// Function to load client's loan
+// Função para carregar o empréstimo ativo de um cliente
 async function loadClientLoan(clientId) {
+  if (!db) { // Verificação crucial
+    showToast('Erro', 'Banco de dados não inicializado (loadClientLoan).', 'error');
+    return;
+  }
+  const loanInfoEl = document.getElementById('loanInfo');
+   if (!loanInfoEl) {
+       console.error("Elemento #loanInfo não encontrado para exibir detalhes do empréstimo.");
+       return;
+   }
+
+  console.log(`Carregando empréstimo ativo para cliente ID: ${clientId}`);
   try {
-    // Query for client's loan
     const snapshot = await db.collection('loans')
       .where('clientId', '==', clientId)
       .where('status', '==', 'active')
+      .limit(1)
       .get();
-    
+
     if (snapshot.empty) {
-      console.log('No active loans found for client');
+      console.log(`Nenhum empréstimo ativo encontrado para cliente ${clientId}.`);
+      loanInfoEl.innerHTML = '<p>Nenhum empréstimo ativo encontrado.</p>';
+      currentLoan = null;
+      window.currentLoan = null;
+      const newLoanSectionEl = document.getElementById('newLoanSection');
+      if (newLoanSectionEl) newLoanSectionEl.classList.remove('hidden');
       return;
     }
-    
-    // We should only have one active loan per client
+
     const loanDoc = snapshot.docs[0];
-    const loan = loanDoc.data();
-    loan.id = loanDoc.id;
-    
-    // Store current loan
-    currentLoan = loan;
+    const loanData = loanDoc.data();
+    loanData.id = loanDoc.id;
+
+    if (loanData.startDate && typeof loanData.startDate.toDate === 'function') {
+        loanData.startDate = loanData.startDate.toDate();
+    }
+    if (loanData.lastPaymentDate && typeof loanData.lastPaymentDate.toDate === 'function') {
+        loanData.lastPaymentDate = loanData.lastPaymentDate.toDate();
+    }
+
+    currentLoan = loanData;
     window.currentLoan = currentLoan;
-    
-    // Calculate current debt
-    const { totalDebt, interestAccrued } = calculateRemainingDebt(loan);
-    
-    // Update loan info in UI
-    const loanInfo = document.getElementById('loanInfo');
-    
-    // Format dates and values
-    const startDate = formatDate(loan.startDate.toDate());
-    const lastPaymentDate = loan.lastPaymentDate ? formatDate(loan.lastPaymentDate.toDate()) : 'Nenhum';
-    
-    // Calculate how many days since the loan started
-    const daysSinceStart = calculateDaysSince(loan.startDate.toDate());
-    
-    loanInfo.innerHTML = `
-      <div class="loan-details">
-        <div class="loan-detail">
-          <div class="loan-detail-label">Valor Emprestado</div>
-          <div class="loan-detail-value">R$ ${loan.amount.toFixed(2)}</div>
+    console.log("Empréstimo ativo carregado:", currentLoan);
+
+    const { totalDebt, interestAccrued, monthsElapsed } = calculateRemainingDebt(currentLoan);
+    console.log(`Dívida calculada: R$${totalDebt.toFixed(2)}, Juros: R$${interestAccrued.toFixed(2)}, Meses: ${monthsElapsed.toFixed(2)}`);
+
+    const startDateFormatted = loanData.startDate ? formatDate(loanData.startDate) : 'N/D';
+    const lastPaymentDateFormatted = loanData.lastPaymentDate ? formatDate(loanData.lastPaymentDate) : 'Nenhum';
+    const daysSinceStart = loanData.startDate ? calculateDaysSince(loanData.startDate) : 0;
+
+    loanInfoEl.innerHTML = `
+      <div class="loan-details-grid">
+        <div class="loan-detail-item">
+          <span class="label">Valor Original:</span>
+          <span class="value">R$ ${loanData.amount.toFixed(2)}</span>
         </div>
-        <div class="loan-detail">
-          <div class="loan-detail-label">Taxa de Juros</div>
-          <div class="loan-detail-value">${loan.interestRate}% ao mês</div>
+        <div class="loan-detail-item">
+          <span class="label">Taxa Juros:</span>
+          <span class="value">${loanData.interestRate}% a.m.</span>
         </div>
-        <div class="loan-detail">
-          <div class="loan-detail-label">Data do Empréstimo</div>
-          <div class="loan-detail-value">${startDate} (${daysSinceStart} dias)</div>
+        <div class="loan-detail-item">
+          <span class="label">Data Início:</span>
+          <span class="value">${startDateFormatted} (${daysSinceStart} dias)</span>
         </div>
-        <div class="loan-detail">
-          <div class="loan-detail-label">Último Pagamento</div>
-          <div class="loan-detail-value">${lastPaymentDate}</div>
+         <div class="loan-detail-item">
+          <span class="label">Meses Corridos:</span>
+          <span class="value">${monthsElapsed.toFixed(1)}</span>
         </div>
-        <div class="loan-detail">
-          <div class="loan-detail-label">Total Pago</div>
-          <div class="loan-detail-value">R$ ${loan.totalPaid.toFixed(2)}</div>
+        <div class="loan-detail-item">
+          <span class="label">Total Pago:</span>
+          <span class="value positive">R$ ${loanData.totalPaid.toFixed(2)}</span>
         </div>
-        <div class="loan-detail">
-          <div class="loan-detail-label">Juros Acumulados</div>
-          <div class="loan-detail-value">R$ ${interestAccrued.toFixed(2)}</div>
+        <div class="loan-detail-item">
+          <span class="label">Juros Acumulados:</span>
+          <span class="value warning">R$ ${interestAccrued.toFixed(2)}</span>
         </div>
-        <div class="loan-detail">
-          <div class="loan-detail-label">Valor Atual da Dívida</div>
-          <div class="loan-detail-value" style="color: var(--warning); font-weight: 600;">R$ ${totalDebt.toFixed(2)}</div>
+        <div class="loan-detail-item full-width">
+          <span class="label large">Dívida Atual:</span>
+          <span class="value large negative">R$ ${totalDebt.toFixed(2)}</span>
+        </div>
+         <div class="loan-detail-item full-width">
+          <span class="label">Último Pagamento:</span>
+          <span class="value">${lastPaymentDateFormatted}</span>
         </div>
       </div>
     `;
-    
+
+    const newLoanSectionEl = document.getElementById('newLoanSection');
+    if (newLoanSectionEl) newLoanSectionEl.classList.add('hidden');
+
   } catch (error) {
-    console.error('Error loading client loan:', error);
+    console.error('Erro ao carregar empréstimo do cliente:', error);
     showToast('Erro', 'Falha ao carregar informações do empréstimo', 'error');
+    loanInfoEl.innerHTML = '<p class="error">Erro ao carregar dados do empréstimo.</p>';
+    currentLoan = null;
+    window.currentLoan = null;
   }
 }
 
-// Function to calculate remaining debt with accrued interest
-function calculateRemainingDebt(loan) {
-  // Get loan details
-  const principal = loan.amount;
-  const monthlyInterestRate = loan.interestRate / 100;
-  const startDate = loan.startDate.toDate();
+// Função para calcular dívida restante (Juros Simples Mensal)
+export function calculateRemainingDebt(loan) {
+  if (!loan || !loan.startDate) {
+    console.warn("Dados do empréstimo inválidos para cálculo.");
+    return { principal: 0, interestAccrued: 0, totalDebt: 0, monthsElapsed: 0 };
+  }
+
+  const startDate = (loan.startDate instanceof Date) ? loan.startDate : (loan.startDate.toDate ? loan.startDate.toDate() : null);
+  if (!startDate) {
+      console.error("Data de início inválida no empréstimo:", loan.startDate);
+      return { principal: 0, interestAccrued: 0, totalDebt: 0, monthsElapsed: 0 };
+  }
+
+  const principal = loan.amount || 0;
+  const monthlyInterestRateDecimal = (loan.interestRate || 0) / 100;
   const totalPaid = loan.totalPaid || 0;
-  
-  // Calculate time elapsed in months
+
   const today = new Date();
   const monthsElapsed = calculateMonthsBetween(startDate, today);
-  
-  // Calculate accrued interest
-  const interestAccrued = principal * monthlyInterestRate * monthsElapsed;
-  
-  // Calculate total debt
-  const totalDebt = principal + interestAccrued - totalPaid;
-  
+
+  const interestAccrued = principal * monthlyInterestRateDecimal * monthsElapsed;
+  let totalDebt = principal + interestAccrued - totalPaid;
+  totalDebt = Math.max(0, totalDebt);
+
   return {
     principal,
-    interestAccrued,
+    interestAccrued: Math.max(0, interestAccrued),
     totalDebt,
     monthsElapsed
   };
 }
 
-// Function to calculate months between two dates
+// Função para calcular meses (incluindo fração) entre duas datas
 function calculateMonthsBetween(startDate, endDate) {
-  const years = endDate.getFullYear() - startDate.getFullYear();
-  const months = endDate.getMonth() - startDate.getMonth();
-  const days = endDate.getDate() - startDate.getDate();
-  
-  // Adjust for partial months
-  let totalMonths = years * 12 + months + (days > 0 ? days / 30 : 0);
-  
-  // Ensure we never return less than 0
+  if (!(startDate instanceof Date) || !(endDate instanceof Date) || isNaN(startDate) || isNaN(endDate)) {
+      console.error("Datas inválidas para calculateMonthsBetween:", startDate, endDate);
+      return 0;
+  }
+   if (endDate < startDate) {
+       return 0;
+   }
+
+  let years = endDate.getFullYear() - startDate.getFullYear();
+  let months = endDate.getMonth() - startDate.getMonth();
+  let days = endDate.getDate() - startDate.getDate();
+
+  if (days < 0) {
+    months--;
+    const daysInPreviousMonth = new Date(endDate.getFullYear(), endDate.getMonth(), 0).getDate();
+    days += daysInPreviousMonth;
+  }
+
+  let totalMonths = years * 12 + months + (days / 30);
   return Math.max(0, totalMonths);
 }
 
-// Function to calculate days since a date
+// Função para calcular dias desde uma data
 function calculateDaysSince(date) {
+   if (!(date instanceof Date) || isNaN(date)) {
+       console.error("Data inválida para calculateDaysSince:", date);
+       return 0;
+   }
   const today = new Date();
-  const diffTime = Math.abs(today - date);
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  const diffTime = startOfToday - startOfDate;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays;
 }
 
-// Helper function to format date
+// Função auxiliar para formatar data (pt-BR)
 function formatDate(date) {
-  return date.toLocaleDateString('pt-BR');
+   if (!(date instanceof Date) || isNaN(date)) {
+       return 'Data inválida';
+   }
+  return date.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
 }
 
-// Export current loan for use in other modules
+// Exporta a função para obter o empréstimo atual (se necessário)
 export function getCurrentLoan() {
   return currentLoan;
 }
